@@ -1,0 +1,6 @@
+{
+  "name": "webdesk",
+  "version": "0.8.0",
+  "description": "WebDesk - Web-first remote desktop (Xvfb + Chrome in browser)",
+  "private": true
+}

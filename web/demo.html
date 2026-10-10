@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebDesk Demo</title>
+<style>
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden; background: #16191d; color: #dde3ea;
+    font: 13px/1.5 system-ui, sans-serif;
+  }
+  /* 主区域:远程桌面铺满剩余空间 */
+  #main { position: fixed; inset: 0; }
+  #mount { width: 100%; height: 100%; }
+
+  /* ---- 左侧设置栏(noVNC 风格,默认收起) ---- */
+  #sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 288px; z-index: 10;
+    background: #1d2126; border-right: 1px solid #2c323a;
+    transform: translateX(-100%); transition: transform .18s ease;
+    display: flex; flex-direction: column; box-shadow: 4px 0 16px rgba(0,0,0,.35);
+  }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar header {
+    padding: 12px 16px; border-bottom: 1px solid #2c323a;
+    display: flex; align-items: center; gap: 8px; flex: none;
+  }
+  #sidebar header b { font-size: 14px; }
+  #sidebar header .ver { color: #7ec8ff; font-size: 12px; margin-left: auto; }
+  #sidebar .body { overflow-y: auto; padding: 12px 16px 24px; flex: 1; }
+  .sec { margin-bottom: 18px; }
+  .sec > .title {
+    font-size: 11px; letter-spacing: .08em; color: #8a93a0;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .row label { width: 64px; flex: none; color: #aab3bd; }
+  .row input[type=range] { flex: 1; }
+  .row .val { width: 52px; text-align: right; color: #7ec8ff; flex: none; }
+  input[type=text], input[type=password], textarea, select {
+    background: #14171b; color: #dde3ea; border: 1px solid #2c323a;
+    border-radius: 6px; padding: 6px 8px; font: inherit; width: 100%;
+    box-sizing: border-box;
+  }
+  textarea { height: 72px; resize: vertical; }
+  button {
+    background: #2a313a; color: #dde3ea; border: 1px solid #39424d;
+    border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #333c47; }
+  button.primary { background: #1e5f8a; border-color: #2a7cb0; }
+  button.primary:hover { background: #2471a6; }
+  .status { padding: 6px 8px; border-radius: 6px; background: #14171b; color: #9fd49f; min-height: 20px; }
+  .status.err { color: #ff6b6b; }
+  .hint { color: #66707c; font-size: 12px; }
+
+  /* 收起/展开按钮:贴在侧栏右缘,始终可见 */
+  #side-toggle {
+    position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 11;
+    width: 26px; height: 64px; border-radius: 0 8px 8px 0; border-left: none;
+    background: #1d2126; border-color: #2c323a; color: #aab3bd;
+    font-size: 14px; padding: 0; transition: left .18s ease;
+  }
+  #side-toggle.shift { left: 288px; }
+</style>
+</head>
+<body>
+<div id="main"><div id="mount"></div></div>
+
+<div id="sidebar">
+  <header><b>WebDesk</b><span class="ver" id="ver"></span></header>
+  <div class="body">
+
+    <div class="sec">
+      <div class="title">连接</div>
+      <div class="row"><input type="text" id="in-url" placeholder="ws://127.0.0.1:9527"></div>
+      <div class="row"><input type="password" id="in-token" placeholder="token(agent -k 参数)"></div>
+      <div class="row"><button class="primary" id="btn-connect">连接</button>
+        <span class="hint">改完点连接(刷新页面)</span></div>
+    </div>
+
+    <div class="sec">
+      <div class="title">画面</div>
+      <div class="row"><label>画质</label>
+        <input type="range" id="in-scale" min="10" max="100" step="5">
+        <span class="val" id="val-scale"></span></div>
+      <div class="row"><label>压缩</label>
+        <select id="in-comp">
+          <option value="0">无损 zstd</option>
+          <option value="50">WebP 50</option>
+          <option value="60">WebP 60</option>
+          <option value="70">WebP 70</option>
+          <option value="80">WebP 80</option>
+          <option value="90">WebP 90</option>
+        </select></div>
+      <div class="row"><label>最低FPS</label>
+        <input type="range" id="in-idlefps" min="1" max="10" style="flex:1">
+        <span class="val" id="val-idlefps"></span></div>
+      <div class="row"><label>最高FPS</label>
+        <input type="range" id="in-maxfps" min="1" max="60" style="flex:1">
+        <span class="val" id="val-maxfps"></span></div>
+    </div>
+
+    <div class="sec">
+      <div class="title">剪贴板</div>
+      <textarea id="clip-text" placeholder="远端剪贴板内容显示在这里;也可编辑后写入远端"></textarea>
+      <div class="row">
+        <button id="btn-clip-get">读取远端</button>
+        <button id="btn-clip-set">写入远端</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="title">截图</div>
+      <div class="row">
+        <button class="primary" id="btn-shot">截取原屏幕 (PNG)</button>
+      </div>
+      <div class="hint" id="shot-hint">原始分辨率,非视图缩放尺寸</div>
+    </div>
+
+    <div class="sec">
+      <div class="title">状态</div>
+      <div class="status" id="st-text">未连接</div>
+      <div class="row hint" id="st-stats">累计 - KB / - 帧</div>
+    </div>
+
+  </div>
+</div>
+<button id="side-toggle" title="设置">☰</button>
+
+<script src="dist/sdk.js?v=0.8.0"></script>
+<script>
+(function () {
+  var qs = new URLSearchParams(location.search);
+  document.getElementById("ver").textContent = "v" + WebDesk.version;
+
+  // ---- 连接参数:URL ?url= / ?token= 优先,其次 localStorage ----
+  var url = qs.get("url") || localStorage.getItem("webdesk.demo.url") || "";
+  var token = qs.get("token") || localStorage.getItem("webdesk.demo.token") || "";
+  var inUrl = document.getElementById("in-url"), inToken = document.getElementById("in-token");
+  inUrl.value = url; inToken.value = token;
+
+  // ---- 画质设置:localStorage 记忆(旧设置里的 jpeg 字段迁移为 compression) ----
+  var SET_KEY = "webdesk.demo.settings";
+  var settings;
+  try { settings = JSON.parse(localStorage.getItem(SET_KEY) || "{}"); } catch (e) { settings = {}; }
+  if (settings.compression === undefined && settings.jpeg !== undefined) {
+    settings.compression = settings.jpeg;
+  }
+  settings = Object.assign({ scale: 100, compression: 70, idleFps: 1, maxFps: 20 }, settings);
+
+  var $ = function (id) { return document.getElementById(id); };
+  var inScale = $("in-scale"), inComp = $("in-comp"), inIdle = $("in-idlefps"), inMax = $("in-maxfps");
+  inScale.value = settings.scale; inComp.value = String(settings.compression);
+  inIdle.value = settings.idleFps; inMax.value = settings.maxFps;
+  function syncOut() {
+    $("val-scale").textContent = inScale.value + "%";
+    $("val-idlefps").textContent = inIdle.value;
+    $("val-maxfps").textContent = inMax.value;
+  }
+  syncOut();
+
+  function readSettings() {
+    settings = {
+      scale: parseInt(inScale.value, 10),
+      compression: parseInt(inComp.value, 10),
+      idleFps: parseInt(inIdle.value, 10),
+      maxFps: parseInt(inMax.value, 10),
+    };
+    localStorage.setItem(SET_KEY, JSON.stringify(settings));
+    syncOut();
+  }
+
+  // ---- 挂载远程桌面 ----
+  var handle = null;
+  function mountDesk() {
+    if (!token) {
+      setStatus("缺 token:右侧填入 agent -k 的 token 后点连接", true);
+      return;
+    }
+    handle = WebDesk.window("#mount", {
+      url: url || undefined,           // 缺省连页面同主机 :9527
+      token: token,
+      scale: settings.scale, compression: settings.compression,
+      idleFps: settings.idleFps, maxFps: settings.maxFps,
+      onStatus: function (s) { setStatus(s.text || "已连接", !s.connected && !!s.text); },
+      onClipboard: function (text) { $("clip-text").value = text; },
+    });
+    localStorage.setItem("webdesk.demo.url", url);
+    localStorage.setItem("webdesk.demo.token", token);
+  }
+
+  function setStatus(text, isErr) {
+    var el = $("st-text");
+    el.textContent = text || "已连接";
+    el.className = "status" + (isErr ? " err" : "");
+  }
+
+  $("btn-connect").addEventListener("click", function () {
+    var p = new URLSearchParams();
+    if (inUrl.value) p.set("url", inUrl.value);
+    if (inToken.value) p.set("token", inToken.value);
+    location.search = p.toString();
+  });
+
+  // ---- 画质:变更即时下发 ----
+  inScale.addEventListener("change", function () { readSettings(); handle && handle.setQuality({ scale: settings.scale }); });
+  inComp.addEventListener("change", function () { readSettings(); handle && handle.setQuality({ compression: settings.compression }); });
+  inIdle.addEventListener("change", function () { readSettings(); handle && handle.setQuality({ idleFps: settings.idleFps }); });
+  inMax.addEventListener("change", function () { readSettings(); handle && handle.setQuality({ maxFps: settings.maxFps }); });
+  [inScale, inIdle, inMax].forEach(function (el) { el.addEventListener("input", syncOut); });
+
+  // ---- 剪贴板 ----
+  $("btn-clip-get").addEventListener("click", function () {
+    if (!handle) return;
+    setStatus("读取远端剪贴板…");
+    handle.getClipboard().then(function (text) {
+      $("clip-text").value = text;
+      setStatus(text ? "已读取远端剪贴板" : "远端剪贴板为空");
+    });
+  });
+  $("btn-clip-set").addEventListener("click", function () {
+    if (!handle) return;
+    var t = $("clip-text").value;
+    if (!t) { setStatus("剪贴板内容为空", true); return; }
+    handle.setClipboard(t);
+    setStatus("已写入远端剪贴板");
+  });
+
+  // ---- 截图(原屏幕原始分辨率) ----
+  $("btn-shot").addEventListener("click", function () {
+    if (!handle) return;
+    handle.screenshot().then(function (blob) {
+      var size = handle.screenSize();
+      $("shot-hint").textContent = size
+        ? "上一次截图:" + size.w + "×" + size.h + " PNG " + (blob.size / 1024).toFixed(0) + "KB"
+        : (blob.size / 1024).toFixed(0) + "KB";
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "webdesk-" + Date.now() + ".png";
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    });
+  });
+
+  // ---- 状态与流量统计 ----
+  setInterval(function () {
+    if (!handle) return;
+    var s = handle.stats();
+    $("st-stats").textContent = "累计 " + (s.bytes / 1024).toFixed(1) + " KB / " + s.frames + " 帧" +
+      (handle.screenSize() ? "(屏幕 " + handle.screenSize().w + "×" + handle.screenSize().h + ")" : "");
+  }, 1000);
+
+  // ---- 侧栏收起/展开(默认收起) ----
+  var sidebar = $("sidebar"), toggle = $("side-toggle");
+  toggle.addEventListener("click", function () {
+    var open = sidebar.classList.toggle("open");
+    toggle.classList.toggle("shift", open);
+    toggle.textContent = open ? "⟨" : "☰";
+  });
+
+  mountDesk();
+})();
+</script>
+</body>
+</html>

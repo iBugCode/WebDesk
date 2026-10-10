@@ -1,0 +1,7 @@
+/target/
+/dist-static/
+node_modules/
+/test-results/
+/.testenv/
+/Docs/
+*.log

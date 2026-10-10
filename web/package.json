@@ -1,0 +1,19 @@
+{
+  "name": "webdesk-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebDesk browser client",
+  "scripts": {
+    "build": "npm run build:sdk",
+    "build:sdk": "esbuild src/sdk.ts --bundle --format=iife --global-name=WebDesk --outfile=dist/sdk.js --minify --define:WEBDESK_VERSION=$(node -p \"JSON.stringify(require('../package.json').version)\")",
+    "watch": "npm run build:sdk -- --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fzstd": "^0.1.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}
