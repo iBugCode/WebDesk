@@ -54,7 +54,7 @@ jobs:
           ( cd dist-release && tar -czf ../webdesk-v${{ steps.meta.outputs.version }}-linux-x64.tar.gz \
               webdesk-linux-x64 sdk.js demo.html README.md README.zh-CN.md USAGE.md )
           sha256sum webdesk-v${{ steps.meta.outputs.version }}-linux-x64.tar.gz > dist-release/SHA256SUMS
-          sha256sum webdesk-linux-x64 sdk.js >> dist-release/SHA256SUMS
+          sha256sum webdesk-linux-x64 web/dist/sdk.js >> dist-release/SHA256SUMS
 
       - name: Upload artifacts (workflow run)
         uses: actions/upload-artifact@v4
