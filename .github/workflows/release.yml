@@ -1,0 +1,92 @@
+name: Release
+
+# Tag push (v*) builds the statically-linked Linux agent + the browser SDK and
+# publishes both to a GitHub Release. Also runnable by hand (workflow_dispatch)
+# with an existing tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v0.8.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Read version
+        id: meta
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Build static Linux binary (musl)
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update -y && sudo apt-get install -y musl-tools
+          RUSTFLAGS="-C target-feature=+crt-static" \
+            cargo build --release --target x86_64-unknown-linux-musl
+          cp target/x86_64-unknown-linux-musl/release/webdesk webdesk-linux-x64
+          chmod 755 webdesk-linux-x64
+          # sanity: really static?
+          file webdesk-linux-x64
+
+      - name: Build SDK
+        run: |
+          (cd web && npm install && npm run build)
+          sha256sum web/dist/sdk.js
+
+      - name: Package
+        run: |
+          mkdir -p dist-release
+          cp webdesk-linux-x64 dist-release/
+          cp web/dist/sdk.js dist-release/
+          cp web/demo.html dist-release/
+          cp README.md README.zh-CN.md USAGE.md dist-release/
+          ( cd dist-release && tar -czf ../webdesk-v${{ steps.meta.outputs.version }}-linux-x64.tar.gz \
+              webdesk-linux-x64 sdk.js demo.html README.md README.zh-CN.md USAGE.md )
+          sha256sum webdesk-v${{ steps.meta.outputs.version }}-linux-x64.tar.gz > dist-release/SHA256SUMS
+          sha256sum webdesk-linux-x64 sdk.js >> dist-release/SHA256SUMS
+
+      - name: Upload artifacts (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: webdesk-v${{ steps.meta.outputs.version }}-linux-x64
+          path: |
+            webdesk-v${{ steps.meta.outputs.version }}-linux-x64.tar.gz
+            dist-release/SHA256SUMS
+
+      - name: Create / update GitHub Release and upload
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: WebDesk v${{ steps.meta.outputs.version }}
+          body: |
+            Static, zero-dependency build of the WebDesk agent + single-file browser SDK.
+
+            | File | What it is |
+            |---|---|
+            | `webdesk-v${{ steps.meta.outputs.version }}-linux-x64.tar.gz` | Agent binary (musl, statically linked, x86_64) + `sdk.js` + `demo.html` + docs + `SHA256SUMS` |
+            | `webdesk-linux-x64` (artifact) | Bare agent binary |
+
+            Run it on any Linux box with an X server (e.g. Xvfb):
+
+            ```bash
+            tar -xzf webdesk-v${{ steps.meta.outputs.version }}-linux-x64.tar.gz
+            DISPLAY=:99 ./webdesk-linux-x64 --listen 127.0.0.1:9527 -k <token>
+            ```
+
+            See README.md for full docs.
+          files: |
+            webdesk-v${{ steps.meta.outputs.version }}-linux-x64.tar.gz
+            dist-release/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
